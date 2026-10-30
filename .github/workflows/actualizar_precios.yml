@@ -3,7 +3,7 @@ name: Actualizar Precios Gasolineras
 on:
   schedule:
     # Se ejecuta todos los días a las 06:00 UTC (07:00 / 08:00 hora de España)
-    - cron: '22 14 * * *'
+    - cron: '26 14 * * *'
   workflow_dispatch: # Permite ejecutarlo a mano cuando quieras
 
 jobs:
