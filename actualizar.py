@@ -4,7 +4,15 @@ import time
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+raw_url = os.environ.get("SUPABASE_URL", "")
+raw_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
+print(f"Longitud de SUPABASE_URL recibida: {len(raw_url)}")
+print(f"Longitud de SUPABASE_SERVICE_ROLE_KEY recibida: {len(raw_key)}")
+
+if len(raw_url) == 0 or len(raw_key) == 0:
+    print("GitHub NO está pasando los secretos al script.")
+    sys.exit(1)
 SUPABASE_URL = os.environ.get("https://ppzjdckokrbegbpoztzk.supabase.co")
 SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwempkY2tva3JiZWdicG96dHprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MzMwODMyNCwiZXhwIjoyMTA4ODg0MzI0fQ.SjqgtJmdwqIohbvrzeu2GUmwkRfp6EVylysW2J8MT0A")
 
