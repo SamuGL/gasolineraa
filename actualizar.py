@@ -1,10 +1,28 @@
 import os
+import sys
+import time
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 SUPABASE_URL = os.environ.get("https://ppzjdckokrbegbpoztzk.supabase.co")
 SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwempkY2tva3JiZWdicG96dHprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MzMwODMyNCwiZXhwIjoyMTA4ODg0MzI0fQ.SjqgtJmdwqIohbvrzeu2GUmwkRfp6EVylysW2J8MT0A")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("ERROR: Faltan las variables de entorno SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.")
+    sys.exit(1)
+
+# Endpoint oficial del Ministerio
 API_MINISTERIO = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
+
+# Cabeceras completas imitando a un navegador Chrome real
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive"
+}
 
 def parse_num(val):
     if not val:
@@ -22,10 +40,45 @@ def parse_coord(val):
     except ValueError:
         return None
 
+def descargar_con_reintentos():
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    
+    # Estrategia de reintentos automáticos
+    retry_strategy = Retry(
+        total=5,
+        backoff_factor=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    # Intentamos primero directo; si la sede del Ministerio bloquea el servidor de GitHub,
+    # usamos un espejo / proxy transparente para descargar el JSON
+    urls_fuente = [
+        API_MINISTERIO,
+        f"https://api.allorigins.win/raw?url={requests.utils.quote(API_MINISTERIO)}"
+    ]
+
+    for url in urls_fuente:
+        try:
+            print(f"Probando descarga desde: {url[:60]}...")
+            res = session.get(url, timeout=45)
+            if res.status_code == 200:
+                data = res.json()
+                if "ListaEESSPrecio" in data:
+                    print("¡Descarga completada con éxito!")
+                    return data
+        except Exception as e:
+            print(f"Aviso: Falló el intento con {url[:30]}... ({e})")
+            time.sleep(2)
+            
+    raise RuntimeError("No se pudo descargar el catálogo de gasolineras desde ninguna fuente.")
+
 print("Descargando datos del Ministerio...")
-headers = {"User-Agent": "Mozilla/5.0"}
-resp = requests.get(API_MINISTERIO, headers=headers, timeout=60)
-data = resp.json()
+data = descargar_con_reintentos()
 
 lista = data.get("ListaEESSPrecio", [])
 print(f"Total estaciones recibidas: {len(lista)}")
@@ -38,8 +91,8 @@ for st in lista:
     if not lat or not lon:
         continue
 
-    # Solo coordenadas válidas de España
-    if not (27.0 <= lat <= 44.0 and -19.0 <= lon <= 5.0):
+    # Filtrar solo coordenadas válidas en territorio español
+    if not (27.0 <= lat <= 44.5 and -19.0 <= lon <= 5.0):
         continue
 
     g95 = parse_num(st.get("Precio Gasolina 95 E5"))
@@ -48,7 +101,6 @@ for st in lista:
     die_p = parse_num(st.get("Precio Gasoleo Premium"))
     glp = parse_num(st.get("Precio Gases licuados del petroleo"))
 
-    # Omitir si no tiene precios informados
     if not any([g95, g98, die, die_p, glp]):
         continue
 
@@ -89,4 +141,4 @@ for i in range(0, len(records), chunk_size):
     else:
         print(f"Bloque {i}-{i+len(chunk)} actualizado.")
 
-print("Actualización completada con éxito.")
+print("¡Proceso completado con éxito!")
