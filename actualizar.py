@@ -4,31 +4,25 @@ import time
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
-raw_url = os.environ.get("SUPABASE_URL", "")
-raw_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
-print(f"Longitud de SUPABASE_URL recibida: {len(raw_url)}")
-print(f"Longitud de SUPABASE_SERVICE_ROLE_KEY recibida: {len(raw_key)}")
+# Leemos las variables directamente
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
-if len(raw_url) == 0 or len(raw_key) == 0:
-    print("GitHub NO está pasando los secretos al script.")
-    sys.exit(1)
-SUPABASE_URL = os.environ.get("https://ppzjdckokrbegbpoztzk.supabase.co")
-SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwempkY2tva3JiZWdicG96dHprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MzMwODMyNCwiZXhwIjoyMTA4ODg0MzI0fQ.SjqgtJmdwqIohbvrzeu2GUmwkRfp6EVylysW2J8MT0A")
+print(f"SUPABASE_URL recibida (longitud {len(SUPABASE_URL)})")
+print(f"SUPABASE_SERVICE_ROLE_KEY recibida (longitud {len(SUPABASE_KEY)})")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("ERROR: Faltan las variables de entorno SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.")
+    print("ERROR: Alguna de las dos claves está vacía.")
     sys.exit(1)
 
 # Endpoint oficial del Ministerio
 API_MINISTERIO = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
 
-# Cabeceras completas imitando a un navegador Chrome real
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive"
 }
 
@@ -52,7 +46,6 @@ def descargar_con_reintentos():
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    # Estrategia de reintentos automáticos
     retry_strategy = Retry(
         total=5,
         backoff_factor=3,
@@ -63,8 +56,6 @@ def descargar_con_reintentos():
     session.mount("https://", adapter)
     session.mount("http://", adapter)
 
-    # Intentamos primero directo; si la sede del Ministerio bloquea el servidor de GitHub,
-    # usamos un espejo / proxy transparente para descargar el JSON
     urls_fuente = [
         API_MINISTERIO,
         f"https://api.allorigins.win/raw?url={requests.utils.quote(API_MINISTERIO)}"
@@ -72,24 +63,24 @@ def descargar_con_reintentos():
 
     for url in urls_fuente:
         try:
-            print(f"Probando descarga desde: {url[:60]}...")
+            print(f"Intentando descargar desde: {url[:60]}...")
             res = session.get(url, timeout=45)
             if res.status_code == 200:
                 data = res.json()
                 if "ListaEESSPrecio" in data:
-                    print("¡Descarga completada con éxito!")
+                    print("¡Datos descargados con éxito!")
                     return data
         except Exception as e:
-            print(f"Aviso: Falló el intento con {url[:30]}... ({e})")
+            print(f"Fallo temporal con {url[:30]}... ({e})")
             time.sleep(2)
             
-    raise RuntimeError("No se pudo descargar el catálogo de gasolineras desde ninguna fuente.")
+    raise RuntimeError("No se pudo descargar el catálogo de gasolineras.")
 
-print("Descargando datos del Ministerio...")
+print("Conectando con el servicio de precios...")
 data = descargar_con_reintentos()
 
 lista = data.get("ListaEESSPrecio", [])
-print(f"Total estaciones recibidas: {len(lista)}")
+print(f"Gasolineras encontradas: {len(lista)}")
 
 records = []
 for st in lista:
@@ -99,7 +90,7 @@ for st in lista:
     if not lat or not lon:
         continue
 
-    # Filtrar solo coordenadas válidas en territorio español
+    # Filtrar coordenadas dentro de territorio español
     if not (27.0 <= lat <= 44.5 and -19.0 <= lon <= 5.0):
         continue
 
@@ -130,7 +121,7 @@ for st in lista:
         "ubicacion": f"SRID=4326;POINT({lon} {lat})"
     })
 
-print(f"Subiendo {len(records)} gasolineras a Supabase en bloques de 500...")
+print(f"Enviando {len(records)} estaciones a Supabase en paquetes de 500...")
 
 url_upsert = f"{SUPABASE_URL}/rest/v1/gasolineras?on_conflict=id"
 sb_headers = {
@@ -147,6 +138,6 @@ for i in range(0, len(records), chunk_size):
     if res.status_code not in (200, 201):
         print(f"Error en bloque {i}: {res.status_code} - {res.text}")
     else:
-        print(f"Bloque {i}-{i+len(chunk)} actualizado.")
+        print(f"Bloque {i} a {i+len(chunk)} guardado.")
 
-print("¡Proceso completado con éxito!")
+print("¡Base de datos sincronizada con éxito!")
