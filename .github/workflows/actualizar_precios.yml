@@ -3,7 +3,7 @@ name: Actualizar Precios Gasolineras
 on:
   schedule:
     # Se ejecuta todos los días a las 06:00 UTC (07:00 / 08:00 hora de España)
-    - cron: '21 6 * * *'
+    - cron: '08 7 * * *'
   workflow_dispatch: # Permite ejecutarlo a mano cuando quieras
 
 jobs:
@@ -20,4 +20,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python actualizar.py
+        run: python -u actualizar.py
